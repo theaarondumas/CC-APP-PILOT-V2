@@ -1,5 +1,5 @@
 /* ===========================
-   Verifi — Verification Required (Crash Carts)
+   Verifi — Crash Cart Verification
    Includes MAIN KEYBOARD FIX:
    - No full re-render on each keystroke (keeps iOS keyboard open)
    =========================== */
@@ -282,9 +282,9 @@ function computeVerificationPill(cart) {
   }
 
   const risk = computeExpiryRisk(cart);
-  if (cart.issue) return { level: "review", pill: "Requires review", cls: "review" };
-  if (risk.level === "overdue") return { level: "review", pill: "Requires review", cls: "review" };
-  if (risk.level === "dueSoon") return { level: "review", pill: "Requires review", cls: "review" };
+  if (cart.issue) return { level: "review", pill: "Needs review", cls: "review" };
+  if (risk.level === "overdue") return { level: "review", pill: "Needs review", cls: "review" };
+  if (risk.level === "dueSoon") return { level: "review", pill: "Needs review", cls: "review" };
 
   return { level: "verified", pill: "Verified", cls: "verified" };
 }
@@ -324,15 +324,15 @@ function renderWindowMeta() {
   if (!windowMeta) return;
 
   const opened = round.verificationWindowOpenedAt
-    ? `Window opened at ${formatTimeHM(round.verificationWindowOpenedAt)}`
+    ? `Started ${formatTimeHM(round.verificationWindowOpenedAt)}`
     : "";
 
   const closed = round.verificationWindowClosedAt
-    ? `Window closed at ${formatTimeHM(round.verificationWindowClosedAt)}`
+    ? `Ended ${formatTimeHM(round.verificationWindowClosedAt)}`
     : "";
 
   const isOpen = !!round.verificationWindowOpenedAt && !round.verificationWindowClosedAt;
-  const openState = isOpen ? "Open" : "";
+  const openState = isOpen ? "Active" : "";
 
   const eventType = round.verificationEventType || "";
 
@@ -356,7 +356,7 @@ function renderDepartmentOptions() {
 function renderRoundMeta() {
   const c = round.carts.length;
   roundMeta.textContent = c === 0
-    ? "No active verifications"
+    ? "No carts in progress"
     : `${round.cartType} • ${round.department} • ${c} cart${c > 1 ? "s" : ""}`;
 }
 
@@ -374,13 +374,13 @@ function addCart(cartNo) {
   );
   if (dup) {
     cartNumberInput.value = "";
-    cartNumberInput.placeholder = "Already in verification";
+    cartNumberInput.placeholder = "Already added";
     return;
   }
 
   round.carts.push(newCart(cleaned));
   cartNumberInput.value = "";
-  cartNumberInput.placeholder = "Enter cart ID to verify";
+  cartNumberInput.placeholder = "Enter or scan cart ID";
 
   saveTechToLocal();
   renderTechAll();
@@ -476,21 +476,21 @@ function cartCardHTML(cart, index) {
       </div>
 
       <section class="sticker sticker--lime">
-        <div class="sticker__title">CRASH CART CHECK</div>
+        <div class="sticker__title">Crash Cart Check</div>
         <div class="sticker__rule"></div>
 
         <div class="formRow">
-          <div class="label">First supply to expire:</div>
-          <input class="underline supplyName" placeholder="Required" value="${escapeHtml(cart.supplyName)}" />
+          <div class="label">Earliest supply expiration:</div>
+          <input class="underline supplyName" placeholder="Supply item" value="${escapeHtml(cart.supplyName)}" />
         </div>
 
         <div class="formRow">
-          <div class="label">Date:</div>
+          <div class="label">Expiration date:</div>
           <input class="underline supplyExp" type="date" value="${escapeHtml(cart.supplyExp)}" />
         </div>
 
         <div class="formRow">
-          <div class="label">Check Date done:</div>
+          <div class="label">Date checked:</div>
           <input class="underline checkDate" type="date" value="${escapeHtml(cart.checkDate)}" />
         </div>
 
@@ -503,7 +503,7 @@ function cartCardHTML(cart, index) {
           <span class="shiftLabel">Shift (required):</span>
           <div class="shiftPills">
             <button type="button" class="shiftBtn" data-shift="Day">Day</button>
-            <button type="button" class="shiftBtn" data-shift="Evening">Eve</button>
+            <button type="button" class="shiftBtn" data-shift="Evening">Evening</button>
             <button type="button" class="shiftBtn" data-shift="Night">Night</button>
           </div>
         </div>
@@ -511,14 +511,14 @@ function cartCardHTML(cart, index) {
         <div class="issueRow">
           <label class="issueToggle">
             <input type="checkbox" class="issueCheckbox" ${cart.issue ? "checked" : ""} />
-            <span>⚠️ Issue present</span>
+            <span>⚠️ Exception</span>
           </label>
-          <span class="issueHint">Requires review</span>
+          <span class="issueHint">Needs review</span>
         </div>
 
         <div class="issueNoteRow ${cart.issue ? "" : "hidden"}">
           <input class="issueNoteInput" maxlength="60"
-            placeholder="Add context (optional)"
+            placeholder="Add note (optional)"
             value="${escapeHtml(cart.issueNote || "")}"
           />
         </div>
@@ -529,13 +529,13 @@ function cartCardHTML(cart, index) {
         <div class="sticker__rule"></div>
 
         <div class="formRow">
-          <div class="label">First Drug to Exp:</div>
+          <div class="label">Earliest medication expiration:</div>
           <input class="underline drugExp" type="date" value="${escapeHtml(cart.drugExp)}" />
         </div>
 
         <div class="formRow">
-          <div class="label">Name of Drug:</div>
-          <input class="underline drugName" placeholder="Required" type="text"
+          <div class="label">Medication name:</div>
+          <input class="underline drugName" placeholder="Medication" type="text"
             autocomplete="off" autocapitalize="words" spellcheck="false"
             value="${escapeHtml(cart.drugName)}" />
         </div>
@@ -619,7 +619,7 @@ function renderNursingTable(targetEl, rows) {
   if (!targetEl) return;
 
   if (rows.length === 0) {
-    targetEl.innerHTML = `<div style="color:rgba(234,242,247,.65); padding:10px;">No verification gaps detected.</div>`;
+    targetEl.innerHTML = `<div style="color:rgba(234,242,247,.65); padding:10px;">No issues detected.</div>`;
     return;
   }
 
@@ -652,8 +652,8 @@ function renderNursingTable(targetEl, rows) {
         <thead>
           <tr>
             <th>Cart ID</th>
-            <th>Central Exp</th>
-            <th>Med Box Exp</th>
+            <th>Supply Exp</th>
+            <th>Medication Exp</th>
             <th>Verification</th>
             <th>Status</th>
           </tr>
@@ -668,13 +668,13 @@ function renderTechNursingLog() {
   const scoped = round.carts.filter(c => c.cartType === round.cartType);
   const rows = showAll ? scoped : scoped.filter(isException);
 
-  let meta = showAll ? "Showing all verifications" : "Exceptions only";
+  let meta = showAll ? "Showing all" : "Showing exceptions only";
 
   const openedAt = round.verificationWindowOpenedAt
-    ? `Window opened at ${formatTimeHM(round.verificationWindowOpenedAt)}`
+    ? `Started ${formatTimeHM(round.verificationWindowOpenedAt)}`
     : "";
   const closedAt = round.verificationWindowClosedAt
-    ? `Window closed at ${formatTimeHM(round.verificationWindowClosedAt)}`
+    ? `Ended ${formatTimeHM(round.verificationWindowClosedAt)}`
     : "";
 
   const windowLine = [openedAt, closedAt].filter(Boolean).join(" • ");
@@ -689,10 +689,10 @@ function renderTechNursingLogForPrint() {
 
   const generated = new Date().toLocaleString();
   const openedAt = round.verificationWindowOpenedAt
-    ? `Window opened at ${formatTimeHM(round.verificationWindowOpenedAt)}`
+    ? `Started ${formatTimeHM(round.verificationWindowOpenedAt)}`
     : "";
   const closedAt = round.verificationWindowClosedAt
-    ? `Window closed at ${formatTimeHM(round.verificationWindowClosedAt)}`
+    ? `Ended ${formatTimeHM(round.verificationWindowClosedAt)}`
     : "";
   const eventType = round.verificationEventType || "";
   const windowLine = [eventType, openedAt, closedAt].filter(Boolean).join(" • ");
@@ -818,7 +818,7 @@ cartNumberInput.addEventListener("keydown", (e) => {
 });
 
 clearRoundBtn.addEventListener("click", () => {
-  if (!confirm("Clear this verification (remove all carts from screen)?")) return;
+  if (!confirm("Reset this verification? This clears all carts on this screen.")) return;
   round.carts = [];
   saveTechToLocal();
   renderTechAll();
@@ -826,7 +826,7 @@ clearRoundBtn.addEventListener("click", () => {
 
 saveRoundBtn.addEventListener("click", () => {
   saveTechToLocal();
-  alert("Verification saved on this device.");
+  alert("Record saved on this device.");
 });
 
 exportJsonBtn.addEventListener("click", () => {
@@ -995,10 +995,10 @@ nurseAddRowBtn.addEventListener("click", () => {
 });
 nurseSaveBtn.addEventListener("click", () => {
   saveNurseToLocal();
-  alert("Nursing log saved on this device.");
+  alert("Log saved on this device.");
 });
 nurseClearBtn.addEventListener("click", () => {
-  if (!confirm("Clear nursing log for this month?")) return;
+  if (!confirm("Reset this month? This clears all rows.")) return;
   nurseLog.rows = [];
   saveNurseToLocal();
   renderNurseAll();
