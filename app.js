@@ -1,11 +1,7 @@
 /* ===========================
    Verifi — Verification Required (Crash Carts)
-   - Verification language + exception-first
-   - Verification Window (opened/closed) + global header meta
-   - Event type inference (Wednesday = Routine weekly, else Post-use update)
-   - Strict verification 2B
-   - Verified late only if verified AFTER window closed (+delta)
-   - Impact strip is GLOBAL (all cart types): gaps, paper avoided, $ saved
+   Includes MAIN KEYBOARD FIX:
+   - No full re-render on each keystroke (keeps iOS keyboard open)
    =========================== */
 
 const $ = (id) => document.getElementById(id);
@@ -14,7 +10,7 @@ const LOCAL_KEY_TECH = "verifi_pilot_round_v1";
 const LOCAL_KEY_NURSE = "verifi_pilot_nurse_log_v1";
 
 /* ---------------------------
-   NAV (Tech / Nursing screens)
+   NAV
 --------------------------- */
 const techView = $("techView");
 const nursingView = $("nursingView");
@@ -69,18 +65,12 @@ const metricMoney = $("metricMoney");
 let showAll = false;
 let verificationWindowOpen = false;
 
-/* ---------------------------
-   Impact assumptions (tune later)
---------------------------- */
 const IMPACT = {
   costPerPage: 0.06,
   minutesSavedPerVerified: 2.0,
   laborCostPerHour: 35
 };
 
-/* ---------------------------
-   Round / session model
---------------------------- */
 let round = {
   cartType: "Adult – Towers",
   department: "",
@@ -90,7 +80,6 @@ let round = {
   verificationEventType: "Unspecified"
 };
 
-// Department lists
 const DEPARTMENTS = {
   "Adult – Towers": [
     "4 South","4 East","3 South","3 East","2 South","2 East",
@@ -120,29 +109,25 @@ const DEPARTMENTS = {
 };
 
 /* ---------------------------
-   Paper pages per verification (TECH) by department
+   Paper pages per verification (TECH)
 --------------------------- */
 const DEFAULT_PAGES_PER_VERIFICATION = 2;
 const PAPER_PAGES_BY_DEPT = {
   "ICU Pavilion — Pav A": 3,
   "ICU Pavilion — Pav B": 3,
   "ICU Pavilion — Pav C": 3,
-
   "ER Area": 3,
   "ER Triage": 3,
   "Cath Lab": 3,
-
   "4 South": 2,
   "4 East": 2,
   "3 South": 2,
   "3 East": 2,
   "2 South": 2,
   "2 East": 2,
-
   "Central Backup Carts": 2,
   "Tower Extra Cart": 2
 };
-
 function pagesPerVerificationForCart(cart) {
   const dept = cart.department || "";
   return PAPER_PAGES_BY_DEPT[dept] ?? DEFAULT_PAGES_PER_VERIFICATION;
@@ -157,12 +142,10 @@ function formatTimeHM(iso) {
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
-
 function formatMoney(n) {
   const val = Math.max(0, Number(n) || 0);
   return val.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
-
 function formatLateDelta(ms) {
   if (ms <= 0 || Number.isNaN(ms)) return "";
   const totalMinutes = Math.round(ms / 60000);
@@ -171,7 +154,6 @@ function formatLateDelta(ms) {
   const minutes = totalMinutes % 60;
   return minutes > 0 ? `+${hours}h ${minutes}m` : `+${hours}h`;
 }
-
 function inferVerificationEventType(isoOpenedAt) {
   if (!isoOpenedAt) return "Unspecified";
   const d = new Date(isoOpenedAt);
@@ -220,15 +202,7 @@ function isCartVerified(cart) {
   const drugExpOk = !!String(cart.drugExp || "").trim();
   const drugNameOk = !!String(cart.drugName || "").trim();
 
-  return (
-    checkedByOk &&
-    checkDateOk &&
-    shiftOk &&
-    supplyExpOk &&
-    supplyNameOk &&
-    drugExpOk &&
-    drugNameOk
-  );
+  return checkedByOk && checkDateOk && shiftOk && supplyExpOk && supplyNameOk && drugExpOk && drugNameOk;
 }
 
 function stampEdit(cart) {
@@ -248,10 +222,8 @@ function isVerifiedLate(cart) {
   const v = new Date(cart.verifiedAt).getTime();
   const c = new Date(round.verificationWindowClosedAt).getTime();
   if (Number.isNaN(v) || Number.isNaN(c)) return false;
-
   return v > c;
 }
-
 function verifiedLateDelta(cart) {
   if (!cart?.verifiedAt || !round?.verificationWindowClosedAt) return "";
   const v = new Date(cart.verifiedAt).getTime();
@@ -262,10 +234,9 @@ function verifiedLateDelta(cart) {
 }
 
 /* ---------------------------
-   Risk logic (used for Requires review)
+   Risk logic
 --------------------------- */
 const DUE_SOON_DAYS = 30;
-
 function parseISODate(iso) {
   if (!iso) return null;
   const d = new Date(iso + "T00:00:00");
@@ -284,7 +255,6 @@ function earliestDate(d1, d2) {
   if (!d2) return d1;
   return d1 <= d2 ? d1 : d2;
 }
-
 function computeExpiryRisk(cart) {
   const today = startOfToday();
   const s = parseISODate(cart.supplyExp);
@@ -318,9 +288,33 @@ function computeVerificationPill(cart) {
 
   return { level: "verified", pill: "Verified", cls: "verified" };
 }
-
 function isException(cart) {
   return computeVerificationPill(cart).level !== "verified";
+}
+
+/* ---------------------------
+   KEYBOARD FIX: no full re-render on typing
+--------------------------- */
+function updateCartHeaderStatus(cardEl, cart) {
+  const subEl = cardEl.querySelector(".cartSub");
+  if (!subEl) return;
+
+  const status = computeVerificationPill(cart);
+  const verifiedAtTime = cart.verifiedAt
+    ? new Date(cart.verifiedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "";
+
+  const statusLine = `${status.pill}${verifiedAtTime ? ` · ${verifiedAtTime}` : ""}`;
+  subEl.textContent = `${cart.cartType} • ${cart.department} • ${statusLine}`;
+}
+
+function renderAfterEdit(cardEl, cart) {
+  // Update just what’s needed; DO NOT rebuild the cart cards.
+  updateCartHeaderStatus(cardEl, cart);
+  renderRoundMeta();
+  renderTechNursingLog();
+  renderImpactMetrics();
+  saveTechToLocal();
 }
 
 /* ---------------------------
@@ -399,7 +393,7 @@ function removeCart(index) {
 }
 
 /* ---------------------------
-   UI: shift + issue
+   Shift + issue wiring (uses renderAfterEdit)
 --------------------------- */
 function wireShiftButtons(cart, cardEl) {
   const buttons = cardEl.querySelectorAll(".shiftBtn");
@@ -408,10 +402,11 @@ function wireShiftButtons(cart, cardEl) {
       const selected = btn.getAttribute("data-shift");
       cart.shift = selected;
       stampEdit(cart);
+
       buttons.forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
-      saveTechToLocal();
-      renderTechAll();
+
+      renderAfterEdit(cardEl, cart);
     });
   });
 
@@ -441,16 +436,14 @@ function syncIssueUI(cart, cardEl) {
     }
 
     stampEdit(cart);
-    saveTechToLocal();
-    renderTechAll();
+    renderAfterEdit(cardEl, cart);
   };
 
   issueCheckbox.addEventListener("change", apply);
   noteInput.addEventListener("input", () => {
     cart.issueNote = noteInput.value;
     stampEdit(cart);
-    saveTechToLocal();
-    renderTechAll();
+    renderAfterEdit(cardEl, cart);
   });
 
   issueCheckbox.checked = !!cart.issue;
@@ -567,13 +560,42 @@ function renderCartCards() {
     const drugExp = cardEl.querySelector(".drugExp");
     const drugName = cardEl.querySelector(".drugName");
 
-    supplyName.addEventListener("input", () => { cart.supplyName = supplyName.value; stampEdit(cart); saveTechToLocal(); renderTechAll(); });
-    supplyExp.addEventListener("change", () => { cart.supplyExp = supplyExp.value; stampEdit(cart); saveTechToLocal(); renderTechAll(); });
-    checkDate.addEventListener("change", () => { cart.checkDate = checkDate.value; stampEdit(cart); saveTechToLocal(); renderTechAll(); });
-    checkedBy.addEventListener("input", () => { cart.checkedBy = checkedBy.value; stampEdit(cart); saveTechToLocal(); renderTechAll(); });
+    // ✅ KEYBOARD FIX: no full render on input
+    supplyName.addEventListener("input", () => {
+      cart.supplyName = supplyName.value;
+      stampEdit(cart);
+      renderAfterEdit(cardEl, cart);
+    });
 
-    drugExp.addEventListener("change", () => { cart.drugExp = drugExp.value; stampEdit(cart); saveTechToLocal(); renderTechAll(); });
-    drugName.addEventListener("input", () => { cart.drugName = drugName.value; stampEdit(cart); saveTechToLocal(); renderTechAll(); });
+    supplyExp.addEventListener("change", () => {
+      cart.supplyExp = supplyExp.value;
+      stampEdit(cart);
+      renderAfterEdit(cardEl, cart);
+    });
+
+    checkDate.addEventListener("change", () => {
+      cart.checkDate = checkDate.value;
+      stampEdit(cart);
+      renderAfterEdit(cardEl, cart);
+    });
+
+    checkedBy.addEventListener("input", () => {
+      cart.checkedBy = checkedBy.value;
+      stampEdit(cart);
+      renderAfterEdit(cardEl, cart);
+    });
+
+    drugExp.addEventListener("change", () => {
+      cart.drugExp = drugExp.value;
+      stampEdit(cart);
+      renderAfterEdit(cardEl, cart);
+    });
+
+    drugName.addEventListener("input", () => {
+      cart.drugName = drugName.value;
+      stampEdit(cart);
+      renderAfterEdit(cardEl, cart);
+    });
 
     wireShiftButtons(cart, cardEl);
     syncIssueUI(cart, cardEl);
@@ -698,7 +720,6 @@ function countGapsSurfaced(carts) {
 function renderImpactMetrics() {
   if (!metricGaps || !metricPaper || !metricMoney) return;
 
-  // ✅ GLOBAL: all carts, all types
   const all = round.carts;
   const verified = all.filter(isCartVerified);
 
@@ -758,7 +779,7 @@ function downloadJSON(data, filename = "verifi_verification_record.json") {
 }
 
 /* ---------------------------
-   Main render
+   Main render (full render only when needed)
 --------------------------- */
 function renderTechAll() {
   renderWindowMeta();
@@ -770,14 +791,13 @@ function renderTechAll() {
 }
 
 /* ---------------------------
-   Events
+   Tech events
 --------------------------- */
 cartTypeTabs.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-type]");
   if (!btn) return;
 
   round.cartType = btn.getAttribute("data-type");
-
   document.querySelectorAll("#cartTypeTabs .tab").forEach(t => t.classList.remove("active"));
   btn.classList.add("active");
 
@@ -810,7 +830,6 @@ saveRoundBtn.addEventListener("click", () => {
 });
 
 exportJsonBtn.addEventListener("click", () => {
-  // ✅ GLOBAL export impact
   const all = round.carts;
   const verified = all.filter(isCartVerified);
 
@@ -829,7 +848,7 @@ exportJsonBtn.addEventListener("click", () => {
 
 showAllToggle.addEventListener("change", () => {
   showAll = showAllToggle.checked;
-  renderTechAll();
+  renderTechNursingLog();
 });
 
 printPdfBtn.addEventListener("click", () => {
@@ -865,11 +884,7 @@ const nurseTableWrap = $("nurseTableWrap");
 const nursePrintTableWrap = $("nursePrintTableWrap");
 const nursePaperMeta = $("nursePaperMeta");
 
-let nurseLog = {
-  unitName: "",
-  month: "",
-  rows: []
-};
+let nurseLog = { unitName: "", month: "", rows: [] };
 
 const NURSE_COLS = [
   { key:"day", label:"Day" },
@@ -888,7 +903,6 @@ const NURSE_COLS = [
 function todayDayOfMonth() {
   return String(new Date().getDate());
 }
-
 function newNurseRow(day) {
   return {
     day: day || todayDayOfMonth(),
@@ -904,14 +918,12 @@ function newNurseRow(day) {
     signature: ""
   };
 }
-
 function saveNurseToLocal() {
   nurseLog.unitName = nurseUnitName.value || "";
   nurseLog.month = nurseMonth.value || "";
   try { localStorage.setItem(LOCAL_KEY_NURSE, JSON.stringify(nurseLog)); } catch {}
   nursePaperMeta.textContent = `Saved • ${nurseLog.rows.length} row(s)`;
 }
-
 function loadNurseFromLocal() {
   try {
     const raw = localStorage.getItem(LOCAL_KEY_NURSE);
@@ -922,7 +934,6 @@ function loadNurseFromLocal() {
     return true;
   } catch { return false; }
 }
-
 function renderNurseTable(targetEl, rows, isPrint=false) {
   const th = NURSE_COLS.map(c => `<th>${escapeHtml(c.label)}</th>`).join("");
   const body = rows.map((r, idx) => {
@@ -937,12 +948,10 @@ function renderNurseTable(targetEl, rows, isPrint=false) {
           ? `<td>${escapeHtml(r[col.key] || "")}</td>`
           : `<td><input class="paperInput" data-i="${idx}" data-k="${col.key}" value="${escapeHtml(r[col.key] || "")}" /></td>`;
       }
-
       return isPrint
         ? `<td>${r[col.key] ? "Y" : ""}</td>`
         : `<td><input class="paperChk" type="checkbox" data-i="${idx}" data-k="${col.key}" ${r[col.key] ? "checked" : ""} /></td>`;
     }).join("");
-
     return `<tr>${tds}</tr>`;
   }).join("");
 
@@ -973,7 +982,6 @@ function renderNurseTable(targetEl, rows, isPrint=false) {
     });
   });
 }
-
 function renderNurseAll() {
   nurseUnitName.value = nurseLog.unitName || "";
   nurseMonth.value = nurseLog.month || "";
@@ -985,19 +993,16 @@ nurseAddRowBtn.addEventListener("click", () => {
   saveNurseToLocal();
   renderNurseAll();
 });
-
 nurseSaveBtn.addEventListener("click", () => {
   saveNurseToLocal();
   alert("Nursing log saved on this device.");
 });
-
 nurseClearBtn.addEventListener("click", () => {
   if (!confirm("Clear nursing log for this month?")) return;
   nurseLog.rows = [];
   saveNurseToLocal();
   renderNurseAll();
 });
-
 nursePrintBtn.addEventListener("click", () => {
   $("nursePrintUnit").textContent = nurseUnitName.value || "—";
   $("nursePrintMonth").textContent = nurseMonth.value || "—";
@@ -1026,7 +1031,6 @@ function escapeHtml(str) {
   renderDepartmentOptions();
 
   if (!round.department) round.department = (DEPARTMENTS[round.cartType] || [])[0] || "";
-
   document.querySelectorAll("#cartTypeTabs .tab").forEach(t => t.classList.remove("active"));
   document.querySelector(`#cartTypeTabs .tab[data-type="${CSS.escape(round.cartType)}"]`)?.classList.add("active");
   departmentSelect.value = round.department;
